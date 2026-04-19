@@ -318,7 +318,7 @@ const protect = async (
     if (!token || !refreshToken) {
       throw new ClientError(1001, 'parameters not found')
     }
-    jwt.token.check(token, refreshToken, res)
+    await jwt.token.check(token, refreshToken, res)
     show.debug('[AUTH][PROTECT] Success')
     next()
   } catch (err: any) {

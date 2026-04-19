@@ -14,6 +14,23 @@ import Routing from './core/routing/routing'
 import Notification from './common/notification/notification'
 import useSocket from './core/hooks/useSocket'
 
+let isRefreshing = false
+let failedQueue: Array<{
+  resolve: (value: unknown) => void
+  reject: (reason?: unknown) => void
+}> = []
+
+const processQueue = (error: unknown) => {
+  failedQueue.forEach((promise) => {
+    if (error) {
+      promise.reject(error)
+    } else {
+      promise.resolve(null)
+    }
+  })
+  failedQueue = []
+}
+
 function App() {
   const dispatch = useAppDispatch()
   const { apiUrl, theme } = useSelector((state: RootState) => state.home)
@@ -26,14 +43,57 @@ function App() {
   // Set default request timeout to 5s
   axios.defaults.timeout = 5000
 
-  // Request error handling middleware for 500 status code
-  axios.interceptors.response.use(undefined, (error) => {
-    if (error.response.status === 500) {
-      console.error(error)
-      toast.error('Something went wrong, please try again later!')
+  // Request error handling middleware with token refresh
+  axios.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config
+
+      if (error.response?.status === 500) {
+        console.error(error)
+        toast.error('Something went wrong, please try again later!')
+        return Promise.reject(error)
+      }
+
+      if (error.response?.status === 401 || error.response?.status === 400) {
+        if (originalRequest._retry) {
+          dispatch(authSlice.actions.setUser({}))
+          return Promise.reject(error)
+        }
+
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject })
+          })
+            .then(() => {
+              return axios(originalRequest)
+            })
+            .catch((err) => {
+              return Promise.reject(err)
+            })
+        }
+
+        originalRequest._retry = true
+        isRefreshing = true
+
+        try {
+          const refreshResponse = await axios.get(`${apiUrl}/auth/local/check`)
+          const user = refreshResponse.data.result
+          dispatch(authSlice.actions.setUser(user))
+          processQueue(null)
+          return axios(originalRequest)
+        } catch (refreshError) {
+          processQueue(refreshError)
+          dispatch(authSlice.actions.setUser({}))
+          return Promise.reject(refreshError)
+        } finally {
+          isRefreshing = false
+        }
+      }
+
+      return Promise.reject(error)
     }
-    return Promise.reject(error)
-  })
+  )
 
   useEffect(() => {
     // Set backend url
