@@ -19,7 +19,6 @@
     "@types/react": "^18.0.17",
     "@types/react-dom": "^18.0.6",
     "axios": "^0.27.2",
-    "cypress": "^10.10.0",
     "mimelib": "^0.3.1",
     "node-sass": "^7.0.1",
     "react": "^18.2.0",
@@ -33,6 +32,9 @@
     "socket.io-client": "^4.5.2",
     "typescript": "^4.7.4",
     "web-vitals": "^2.1.4"
+  },
+  "devDependencies": {
+    "cypress": "^10.10.0"
   },
   "scripts": {
     "start": "HTTPS=true react-scripts start",

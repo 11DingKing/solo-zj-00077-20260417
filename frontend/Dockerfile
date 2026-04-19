@@ -3,6 +3,7 @@ FROM node:18-alpine
 RUN apk add --no-cache g++ make py3-pip
 WORKDIR /frontend
 COPY package*.json /frontend/
+ENV CYPRESS_INSTALL_BINARY=0
 RUN yarn install
 COPY . /frontend/
 EXPOSE 3000
