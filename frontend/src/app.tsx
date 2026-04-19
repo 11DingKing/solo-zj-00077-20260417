@@ -1,12 +1,12 @@
 import './app.scss'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { RootState } from './core/store/store'
 import { useAppDispatch } from './core/hooks/useStore'
 import { useSelector } from 'react-redux'
 import { homeSlice } from './features/home'
 import { authSlice } from './features/auth/auth'
 import { toast } from 'react-toastify'
-import axios from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import useConfig from './core/hooks/useConfig'
 import Navigation from './common/navigation/navigation'
 import Background from './common/background/background'
@@ -25,11 +25,18 @@ const processQueue = (error: unknown) => {
     if (error) {
       promise.reject(error)
     } else {
-      promise.resolve(null)
+        promise.resolve(null)
     }
   })
   failedQueue = []
 }
+
+interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean
+  _skipTokenRefresh?: boolean
+}
+
+const TOKEN_REFRESH_ERROR_CODES = [1001, 1005, 1006, 1007, 1008]
 
 function App() {
   const dispatch = useAppDispatch()
@@ -38,24 +45,43 @@ function App() {
   const { getApiUrl } = useConfig()
   const { socket } = useSocket()
 
-  // Send cookies with every request
-  axios.defaults.withCredentials = true
-  // Set default request timeout to 5s
-  axios.defaults.timeout = 5000
+  const interceptorRegistered = useRef(false)
 
-  // Request error handling middleware with token refresh
-  axios.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-      const originalRequest = error.config
+  useEffect(() => {
+    if (interceptorRegistered.current) {
+      return
+    }
+    interceptorRegistered.current = true
 
-      if (error.response?.status === 500) {
-        console.error(error)
-        toast.error('Something went wrong, please try again later!')
-        return Promise.reject(error)
-      }
+    axios.defaults.withCredentials = true
+    axios.defaults.timeout = 5000
 
-      if (error.response?.status === 401 || error.response?.status === 400) {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error: AxiosError) => {
+        const originalRequest = error.config as CustomAxiosRequestConfig
+
+        if (error.response?.status === 500) {
+          console.error(error)
+          toast.error('Something went wrong, please try again later!')
+          return Promise.reject(error)
+        }
+
+        const isAuthError =
+          error.response?.status === 401 ||
+          (error.response?.status === 400 &&
+            (error.response.data as any)?.error?.code &&
+            TOKEN_REFRESH_ERROR_CODES.includes((error.response.data as any).error.code))
+
+        if (!isAuthError) {
+          return Promise.reject(error)
+        }
+
+        if (originalRequest._skipTokenRefresh) {
+          dispatch(authSlice.actions.setUser({}))
+          return Promise.reject(error)
+        }
+
         if (originalRequest._retry) {
           dispatch(authSlice.actions.setUser({}))
           return Promise.reject(error)
@@ -77,7 +103,9 @@ function App() {
         isRefreshing = true
 
         try {
-          const refreshResponse = await axios.get(`${apiUrl}/auth/local/check`)
+          const refreshResponse = await axios.get(`${apiUrl}/auth/local/check`, {
+            _skipTokenRefresh: true,
+          } as CustomAxiosRequestConfig)
           const user = refreshResponse.data.result
           dispatch(authSlice.actions.setUser(user))
           processQueue(null)
@@ -90,50 +118,37 @@ function App() {
           isRefreshing = false
         }
       }
+    )
 
-      return Promise.reject(error)
+    return () => {
+      axios.interceptors.response.eject(interceptor)
+      interceptorRegistered.current = false
     }
-  )
+  }, [apiUrl, dispatch])
 
   useEffect(() => {
-    // Set backend url
     const url = getApiUrl()
     dispatch(homeSlice.actions.setApiUrl(url))
 
-    // Get essential data from server
     getUser()
 
-    // Listen for socket.io connection messages
     socket.on('connect', connectListener)
     socket.on('disconnected', disconnectListener)
 
-    // The socket.io the listeners must be removed
-    // In order to prevent multiple event registrations
-    // https://socket.io/how-to/use-with-react-hooks
     return () => {
       socket.off('connect', connectListener)
       socket.off('disconnected', disconnectListener)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * Socket.io connected event
-   */
   const connectListener = () => {
     console.info('[SOCKET] Connected')
   }
 
-  /**
-   * Socket.io disconnected event
-   */
   const disconnectListener = () => {
     console.info('[SOCKET] Disconnected')
   }
 
-  /**
-   * Get user data
-   * @returns object
-   */
   const getUser = async () => {
     try {
       const response = await axios.get(`${apiUrl}/auth/local/check`)
