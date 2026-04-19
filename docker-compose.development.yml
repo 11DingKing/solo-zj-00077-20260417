@@ -1,5 +1,12 @@
 version: '3.7'
 services:
+  mongodb:
+    container_name: mongodb
+    image: mongo:5.0.2
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
   backend:
     container_name: backend
     build:
@@ -10,7 +17,9 @@ services:
       NODE_ENV: development
     volumes:
       - ./backend:/backend
-      - /frontend/node_modules
+      - /backend/node_modules
+    depends_on:
+      - mongodb
   frontend:
     container_name: frontend
     build:
@@ -20,3 +29,8 @@ services:
     volumes:
       - ./frontend:/frontend
       - /frontend/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  mongodb_data:
