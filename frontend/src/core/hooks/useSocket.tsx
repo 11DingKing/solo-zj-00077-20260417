@@ -1,21 +1,36 @@
-import { io } from 'socket.io-client'
-import useConfig from './useConfig'
+import { io, Socket } from 'socket.io-client'
+import { useRef, useEffect } from 'react'
+import { useSelector } from 'react-redux'
+import { RootState } from '../../core/store/store'
 
 const useSocket = () => {
-  const { getApiUrl } = useConfig()
-  const url = getApiUrl()
-  const socket = io(url, { transports: ['websocket'] })
+  const apiUrl = useSelector((state: RootState) => state.home.apiUrl)
+  const socketRef = useRef<Socket | null>(null)
 
-  /**
-   * Send message
-   * @param channel string
-   * @param message string/object
-   */
+  useEffect(() => {
+    const baseUrl = apiUrl.replace(/\/api$/, '')
+
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+    }
+
+    socketRef.current = io(baseUrl, { transports: ['websocket'] })
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+    }
+  }, [apiUrl])
+
   const send = (channel: string, message: string | object) => {
-    socket.emit(channel, message)
+    if (socketRef.current) {
+      socketRef.current.emit(channel, message)
+    }
   }
 
-  return { socket, send }
+  return { socket: socketRef.current as Socket, send }
 }
 
 export default useSocket

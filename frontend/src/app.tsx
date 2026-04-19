@@ -45,13 +45,21 @@ function App() {
   const { getApiUrl } = useConfig()
   const { socket } = useSocket()
 
-  const interceptorRegistered = useRef(false)
+  const apiUrlRef = useRef(apiUrl)
 
   useEffect(() => {
-    if (interceptorRegistered.current) {
+    apiUrlRef.current = apiUrl
+  }, [apiUrl])
+
+  useEffect(() => {
+    const url = getApiUrl()
+    dispatch(homeSlice.actions.setApiUrl(url))
+  }, [dispatch, getApiUrl])
+
+  useEffect(() => {
+    if (!apiUrl) {
       return
     }
-    interceptorRegistered.current = true
 
     axios.defaults.withCredentials = true
     axios.defaults.timeout = 5000
@@ -107,7 +115,8 @@ function App() {
         isRefreshing = true
 
         try {
-          const refreshResponse = await axios.get(`${apiUrl}/auth/local/check`, {
+          const currentApiUrl = apiUrlRef.current
+          const refreshResponse = await axios.get(`${currentApiUrl}/auth/local/check`, {
             _skipTokenRefresh: true,
           } as CustomAxiosRequestConfig)
           const user = refreshResponse.data.result
@@ -126,15 +135,21 @@ function App() {
 
     return () => {
       axios.interceptors.response.eject(interceptor)
-      interceptorRegistered.current = false
     }
   }, [apiUrl, dispatch])
 
   useEffect(() => {
-    const url = getApiUrl()
-    dispatch(homeSlice.actions.setApiUrl(url))
+    if (!apiUrl) {
+      return
+    }
 
     getUser()
+  }, [apiUrl, dispatch])
+
+  useEffect(() => {
+    if (!socket) {
+      return
+    }
 
     socket.on('connect', connectListener)
     socket.on('disconnected', disconnectListener)
@@ -143,7 +158,7 @@ function App() {
       socket.off('connect', connectListener)
       socket.off('disconnected', disconnectListener)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [socket])
 
   const connectListener = () => {
     console.info('[SOCKET] Connected')
