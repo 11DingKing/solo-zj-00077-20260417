@@ -6,7 +6,7 @@ import { useSelector } from 'react-redux'
 import { homeSlice } from './features/home'
 import { authSlice } from './features/auth/auth'
 import { toast } from 'react-toastify'
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosError, AxiosRequestConfig } from 'axios'
 import useConfig from './core/hooks/useConfig'
 import Navigation from './common/navigation/navigation'
 import Background from './common/background/background'
@@ -25,13 +25,13 @@ const processQueue = (error: unknown) => {
     if (error) {
       promise.reject(error)
     } else {
-        promise.resolve(null)
+      promise.resolve(null)
     }
   })
   failedQueue = []
 }
 
-interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
+interface CustomAxiosRequestConfig extends AxiosRequestConfig {
   _retry?: boolean
   _skipTokenRefresh?: boolean
 }
@@ -59,7 +59,11 @@ function App() {
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as CustomAxiosRequestConfig
+        const originalRequest = error.config as CustomAxiosRequestConfig | undefined
+
+        if (!originalRequest) {
+          return Promise.reject(error)
+        }
 
         if (error.response?.status === 500) {
           console.error(error)
